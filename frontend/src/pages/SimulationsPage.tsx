@@ -3,6 +3,7 @@ import { Alert, Button, Select, Table, message } from 'antd';
 import { Play, RefreshCw } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
 import { PageHeader } from '../components/common/PageHeader';
+import { FreshnessBadge, FreshnessChangesAlert } from '../components/common/FreshnessBadge';
 import { RiskEvidenceTable } from '../components/common/RiskEvidenceTable';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { ResidualChart } from '../components/simulation/ResidualChart';
@@ -24,6 +25,8 @@ export function SimulationsPage() {
   useEffect(() => { loadScenarios().catch((error) => reportError(error, '方案列表加载失败')); }, [loadScenarios]);
   const approved = useMemo(() => scenarios.filter((item) => item.scenario_status === 'approved'), [scenarios]);
   useEffect(() => { if (!scenarioId && approved[0]) setScenarioId(approved[0].id); }, [approved, scenarioId]);
+  // 列表由轮询持续刷新，优先使用列表里的最新新鲜度来标记当前详情。
+  const selectedFreshness = useMemo(() => runs.find((run) => run.id === selected?.id)?.freshness ?? selected?.freshness, [runs, selected]);
   const launch = async () => {
     if (!scenarioId) return;
     setStarting(true);
@@ -33,6 +36,7 @@ export function SimulationsPage() {
     { title: '运行', dataIndex: 'id', width: 90, render: (value) => <strong>#{value}</strong> },
     { title: '方案', width: 220, render: (_, row) => row.scenario?.name ?? `方案 #${row.scenario_id}` },
     { title: '状态', dataIndex: 'run_status', width: 135, render: (value) => <StatusBadge status={value} /> },
+    { title: '新鲜度', width: 110, render: (_, row) => <FreshnessBadge freshness={row.freshness} /> },
     { title: '迭代', dataIndex: 'iteration_count', width: 90 },
     { title: '最终残差', dataIndex: 'residual', width: 130, render: (value) => <code>{formatNumber(value, 6)}</code> },
     { title: '风险', width: 95, render: (_, row) => row.risk_flags_json?.length ?? 0 },
@@ -45,7 +49,7 @@ export function SimulationsPage() {
       <Alert className="section-alert" type="warning" showIcon message="推演结果是离线决策证据，不是可直接执行的安全指令" />
       <section className="run-launcher" aria-labelledby="launch-heading"><div><span className="section-index">01</span><h2 id="launch-heading">选择已批准方案</h2></div><Select aria-label="已批准方案" value={scenarioId} onChange={setScenarioId} options={approved.map((item) => ({ value: item.id, label: `${item.name} · v${item.version}` }))} placeholder="当前没有可运行方案" /><Button type="primary" icon={<Play size={17} />} disabled={!scenarioId || !hasRole('engineer', 'admin')} loading={starting} onClick={() => void launch()}>开始离线推演</Button></section>
       <section className="workspace-section"><div className="section-heading"><div><span className="section-index">02</span><h2>运行历史</h2></div></div><Table rowKey="id" columns={columns} dataSource={runs} loading={loading} size="small" pagination={{ pageSize: 8 }} scroll={{ x: 980 }} onRow={(row) => ({ onClick: () => select(row.id).catch(reportError) })} rowClassName={(row) => selected?.id === row.id ? 'selected-row' : ''} /></section>
-      {selected && <section className="workspace-section result-detail" aria-labelledby="result-heading"><div className="section-heading"><div><span className="section-index">03</span><h2 id="result-heading">运行 #{selected.id} 计算证据</h2></div><StatusBadge status={selected.run_status} /></div><div className="result-metrics"><div><span>迭代轮次</span><strong>{selected.iteration_count}</strong></div><div><span>最终残差</span><strong>{formatNumber(selected.residual, 6)}</strong></div><div><span>风险证据</span><strong>{selected.risk_flags_json?.length ?? 0}</strong></div><div><span>算法版本</span><strong>{selected.algorithm_version}</strong></div></div><ResidualChart values={selected.residuals_json ?? []} /><h3>联锁规则证据</h3><RiskEvidenceTable risks={selected.risk_flags_json ?? []} /></section>}
+      {selected && <section className="workspace-section result-detail" aria-labelledby="result-heading"><div className="section-heading"><div><span className="section-index">03</span><h2 id="result-heading">运行 #{selected.id} 计算证据</h2></div><div className="section-heading-badges"><FreshnessBadge freshness={selectedFreshness} /><StatusBadge status={selected.run_status} /></div></div><FreshnessChangesAlert freshness={selectedFreshness} hint="历史结果与已有人工确认仍原样保留；如需最新证据，请重新发起同方案推演。" /><div className="result-metrics"><div><span>迭代轮次</span><strong>{selected.iteration_count}</strong></div><div><span>最终残差</span><strong>{formatNumber(selected.residual, 6)}</strong></div><div><span>风险证据</span><strong>{selected.risk_flags_json?.length ?? 0}</strong></div><div><span>算法版本</span><strong>{selected.algorithm_version}</strong></div></div><ResidualChart values={selected.residuals_json ?? []} /><h3>联锁规则证据</h3><RiskEvidenceTable risks={selected.risk_flags_json ?? []} /></section>}
     </div>
   );
 }

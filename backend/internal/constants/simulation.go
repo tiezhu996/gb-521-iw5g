@@ -29,6 +29,22 @@ func ValidSimulationStatus(value string) bool {
 	}
 }
 
+type FreshnessStatus string
+
+const (
+	FreshnessStatusFresh   FreshnessStatus = "fresh"
+	FreshnessStatusStale   FreshnessStatus = "stale"
+	FreshnessStatusUnknown FreshnessStatus = "unknown"
+)
+
+type FreshnessChangeKind string
+
+const (
+	FreshnessChangeAdded    FreshnessChangeKind = "added"
+	FreshnessChangeRemoved  FreshnessChangeKind = "removed"
+	FreshnessChangeModified FreshnessChangeKind = "modified"
+)
+
 const (
 	RiskRuleVelocity     = "AIR-VELOCITY-001"
 	RiskRuleReverseFlow  = "AIR-DIRECTION-002"

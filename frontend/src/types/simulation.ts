@@ -14,6 +14,24 @@ export interface RiskEvidence {
   description: string;
 }
 
+export type FreshnessStatus = 'fresh' | 'stale' | 'unknown';
+export type FreshnessChangeKind = 'added' | 'removed' | 'modified';
+
+export interface FreshnessChange {
+  entity_type: 'ventilation_node' | 'airway_edge';
+  entity_id: number;
+  code: string;
+  change: FreshnessChangeKind;
+  fields?: string[];
+}
+
+export interface NetworkFreshness {
+  status: FreshnessStatus;
+  stale: boolean;
+  changes: FreshnessChange[];
+  checked_at: string;
+}
+
 export interface SimulationRun {
   id: number;
   scenario_id: number;
@@ -21,6 +39,7 @@ export interface SimulationRun {
   iteration_count: number;
   residual: number;
   input_snapshot_json: unknown;
+  network_fingerprint_json?: unknown;
   node_pressures_json: Record<string, number>;
   edge_flows_json: Record<string, number>;
   residuals_json: number[];
@@ -33,4 +52,5 @@ export interface SimulationRun {
   risk_confirmed_at?: string;
   confirmation_note: string;
   scenario?: FanScenario;
+  freshness?: NetworkFreshness;
 }

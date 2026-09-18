@@ -47,7 +47,7 @@ func NewSimulationService(runs *repository.SimulationRunRepository, scenarios *r
 	return &SimulationService{runs: runs, scenarios: scenarios, nodes: nodes, edges: edges}
 }
 
-func (s *SimulationService) List(ctx context.Context, query dto.SimulationListQuery) ([]model.SimulationRun, int64, int, int, error) {
+func (s *SimulationService) List(ctx context.Context, query dto.SimulationListQuery) ([]dto.SimulationRunView, int64, int, int, error) {
 	page, pageSize := normalizePage(query.Page, query.PageSize)
 	if query.Status != "" && !constants.ValidSimulationStatus(query.Status) {
 		return nil, 0, page, pageSize, api.BadRequest("INVALID_SIMULATION_STATUS", "推演状态筛选值无效", nil)
@@ -56,15 +56,48 @@ func (s *SimulationService) List(ctx context.Context, query dto.SimulationListQu
 	if err != nil {
 		return nil, 0, page, pageSize, mapRepositoryError(err, "推演记录")
 	}
-	return items, total, page, pageSize, nil
+	views, err := s.decorateFreshness(ctx, items)
+	if err != nil {
+		return nil, 0, page, pageSize, err
+	}
+	return views, total, page, pageSize, nil
 }
 
-func (s *SimulationService) Get(ctx context.Context, id uint) (*model.SimulationRun, error) {
+func (s *SimulationService) Get(ctx context.Context, id uint) (*dto.SimulationRunView, error) {
 	item, err := s.runs.Find(ctx, id)
-	return item, mapRepositoryError(err, "推演记录")
+	if err != nil {
+		return nil, mapRepositoryError(err, "推演记录")
+	}
+	views, err := s.decorateFreshness(ctx, []model.SimulationRun{*item})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
 }
 
-func (s *SimulationService) Start(ctx context.Context, scenarioID uint, actor Actor) (*model.SimulationRun, error) {
+// decorateFreshness 用当前启用节点与巷道参数实时校验每轮运行的指纹，
+// 只叠加展示状态，不回写或修改历史结果。
+func (s *SimulationService) decorateFreshness(ctx context.Context, runs []model.SimulationRun) ([]dto.SimulationRunView, error) {
+	nodes, err := s.nodes.AllActive(ctx)
+	if err != nil {
+		return nil, mapRepositoryError(err, "通风节点")
+	}
+	edges, err := s.edges.AllEnabled(ctx)
+	if err != nil {
+		return nil, mapRepositoryError(err, "巷道边")
+	}
+	checkedAt := time.Now().UTC()
+	views := make([]dto.SimulationRunView, 0, len(runs))
+	for _, run := range runs {
+		views = append(views, dto.SimulationRunView{
+			SimulationRun: run,
+			Freshness:     evaluateFreshness(run.NetworkFingerprintJSON, nodes, edges, checkedAt),
+		})
+	}
+	return views, nil
+}
+
+func (s *SimulationService) Start(ctx context.Context, scenarioID uint, actor Actor) (*dto.SimulationRunView, error) {
 	scenario, err := s.scenarios.Find(ctx, scenarioID)
 	if err != nil {
 		return nil, mapRepositoryError(err, "风机方案")
@@ -86,7 +119,8 @@ func (s *SimulationService) Start(ctx context.Context, scenarioID uint, actor Ac
 	run := &model.SimulationRun{
 		ScenarioID: scenario.ID, RunStatus: string(result.Status), IterationCount: result.Iterations,
 		Residual: result.Residual, InputSnapshotJSON: snapshotJSON,
-		NodePressuresJSON: mustJSON(result.Pressures), EdgeFlowsJSON: mustJSON(result.Flows),
+		NetworkFingerprintJSON: mustJSON(buildNetworkFingerprint(nodes, edges)),
+		NodePressuresJSON:      mustJSON(result.Pressures), EdgeFlowsJSON: mustJSON(result.Flows),
 		ResidualsJSON: mustJSON(result.Residuals), RiskFlagsJSON: mustJSON(result.Risks),
 		AlgorithmVersion: algorithmVersion, StartedBy: actor.ID, StartedAt: now, FinishedAt: &now,
 	}
@@ -98,10 +132,13 @@ func (s *SimulationService) Start(ctx context.Context, scenarioID uint, actor Ac
 	if err := s.runs.Create(ctx, run, audit); err != nil {
 		return nil, mapRepositoryError(err, "推演记录")
 	}
-	return run, nil
+	return &dto.SimulationRunView{
+		SimulationRun: *run,
+		Freshness:     evaluateFreshness(run.NetworkFingerprintJSON, nodes, edges, now),
+	}, nil
 }
 
-func (s *SimulationService) ConfirmRisks(ctx context.Context, id uint, note string, actor Actor) (*model.SimulationRun, error) {
+func (s *SimulationService) ConfirmRisks(ctx context.Context, id uint, note string, actor Actor) (*dto.SimulationRunView, error) {
 	run, err := s.runs.Find(ctx, id)
 	if err != nil {
 		return nil, mapRepositoryError(err, "推演记录")
@@ -109,11 +146,18 @@ func (s *SimulationService) ConfirmRisks(ctx context.Context, id uint, note stri
 	if run.RunStatus == string(constants.SimulationStatusRunning) || run.RunStatus == string(constants.SimulationStatusQueued) {
 		return nil, api.Conflict("SIMULATION_NOT_FINISHED", "推演完成后才能确认风险证据")
 	}
+	views, err := s.decorateFreshness(ctx, []model.SimulationRun{*run})
+	if err != nil {
+		return nil, err
+	}
+	if views[0].Freshness.Stale {
+		return nil, api.Conflict("SIMULATION_STALE", "网络关键参数已变化，该轮推演证据已过期，请重新发起同方案推演后再确认")
+	}
 	updated, err := s.runs.ConfirmRisks(ctx, id, actor.ID, note, actor.Audit("simulation_run.risks_confirmed", "simulation_run"))
 	if err != nil {
 		return nil, mapRepositoryError(err, "推演风险确认")
 	}
-	return updated, nil
+	return &dto.SimulationRunView{SimulationRun: *updated, Freshness: views[0].Freshness}, nil
 }
 
 func solveNetwork(scenario model.FanScenario, nodes []model.VentilationNode, edges []model.AirwayEdge) solverResult {

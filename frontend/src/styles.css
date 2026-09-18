@@ -66,11 +66,15 @@ code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.82rem; c
 .page-meta span::before { content: ''; width: 5px; height: 5px; background: var(--coal-400); border-radius: 50%; }
 .page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .section-alert { margin-top: 20px; border-radius: 4px; }
+.freshness-changes { margin: 4px 0 0; padding-left: 18px; }
+.freshness-changes li { margin: 2px 0; }
+.freshness-hint { margin: 8px 0 0; font-weight: 600; }
 
 .workspace-section { margin-top: 30px; padding-top: 4px; }
 .workspace-section + .workspace-section { border-top: 1px solid var(--line); padding-top: 28px; }
 .section-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .section-heading > div { display: flex; align-items: center; gap: 10px; }
+.section-heading-badges { display: flex; align-items: center; gap: 8px; }
 .section-heading h2 { margin: 0; font-size: 1.02rem; }
 .section-heading > span { color: var(--coal-600); font-size: 0.76rem; }
 .section-index { min-width: 28px; color: var(--green); font-size: 0.7rem; font-weight: 800; }

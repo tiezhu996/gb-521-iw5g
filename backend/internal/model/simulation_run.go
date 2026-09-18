@@ -13,6 +13,9 @@ type SimulationRun struct {
 	IterationCount    int            `gorm:"not null;default:0" json:"iteration_count"`
 	Residual          float64        `gorm:"not null;default:0" json:"residual"`
 	InputSnapshotJSON datatypes.JSON `gorm:"type:jsonb;not null" json:"input_snapshot_json"`
+	// NetworkFingerprintJSON 保存发起推演时启用节点与巷道的关键参数指纹，
+	// 允许为空以兼容建列之前的历史运行（新鲜度按 unknown 处理）。
+	NetworkFingerprintJSON datatypes.JSON `gorm:"type:jsonb" json:"network_fingerprint_json"`
 	NodePressuresJSON datatypes.JSON `gorm:"type:jsonb;not null" json:"node_pressures_json"`
 	EdgeFlowsJSON     datatypes.JSON `gorm:"type:jsonb;not null" json:"edge_flows_json"`
 	ResidualsJSON     datatypes.JSON `gorm:"type:jsonb;not null" json:"residuals_json"`
