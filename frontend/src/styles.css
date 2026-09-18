@@ -93,6 +93,14 @@ code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.82rem; c
 .risk-critical { color: #8e3526; background: #f7e8e4; border-color: #d8a395; }
 .risk-warning { color: #775b0d; background: #faf1d5; border-color: #ddc979; }
 .risk-info { color: #275d6b; background: #e2eef1; border-color: #9dc1c9; }
+.status-cell { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.stale-alert { margin-top: 16px; }
+.stale-alert .ant-alert-description > p { margin-bottom: 10px; }
+.stale-alert .ant-table-wrapper { margin: 6px 0 10px; background: var(--surface); border-radius: 3px; }
+.stale-change-entity { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.stale-field-list { margin: 4px 0; padding-left: 0; list-style: none; display: grid; gap: 4px; }
+.stale-field-list li { font-size: 0.8rem; }
+.stale-action-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px !important; margin-bottom: 0 !important; }
 .primary-cell { display: grid; gap: 3px; }
 .primary-cell span, .muted { color: var(--coal-600); font-size: 0.75rem; }
 .table-actions { display: flex; gap: 6px; }

@@ -1,8 +1,8 @@
-import { AlertTriangle, Archive, CheckCircle2, CircleDot, Clock3, FilePenLine, LoaderCircle, XCircle } from 'lucide-react';
+import { AlertTriangle, Archive, CheckCircle2, CircleDot, Clock3, FilePenLine, History, LoaderCircle, XCircle } from 'lucide-react';
 import type { ScenarioStatus } from '../../types/scenario';
 import type { SimulationStatus } from '../../types/simulation';
 
-type Status = ScenarioStatus | SimulationStatus | 'active' | 'inactive' | 'blocked' | 'confirmed';
+type Status = ScenarioStatus | SimulationStatus | 'active' | 'inactive' | 'blocked' | 'confirmed' | 'stale';
 
 const statusMap: Record<Status, { label: string; tone: string; Icon: typeof CircleDot }> = {
   draft: { label: '草稿', tone: 'neutral', Icon: FilePenLine },
@@ -19,6 +19,7 @@ const statusMap: Record<Status, { label: string; tone: string; Icon: typeof Circ
   inactive: { label: '停用', tone: 'neutral', Icon: CircleDot },
   blocked: { label: '阻断', tone: 'danger', Icon: XCircle },
   confirmed: { label: '已人工确认', tone: 'success', Icon: CheckCircle2 },
+  stale: { label: '网络已过期', tone: 'danger', Icon: History },
 };
 
 export function StatusBadge({ status }: { status: Status }) {

@@ -47,7 +47,7 @@ func NewSimulationService(runs *repository.SimulationRunRepository, scenarios *r
 	return &SimulationService{runs: runs, scenarios: scenarios, nodes: nodes, edges: edges}
 }
 
-func (s *SimulationService) List(ctx context.Context, query dto.SimulationListQuery) ([]model.SimulationRun, int64, int, int, error) {
+func (s *SimulationService) List(ctx context.Context, query dto.SimulationListQuery) ([]model.SimulationRunView, int64, int, int, error) {
 	page, pageSize := normalizePage(query.Page, query.PageSize)
 	if query.Status != "" && !constants.ValidSimulationStatus(query.Status) {
 		return nil, 0, page, pageSize, api.BadRequest("INVALID_SIMULATION_STATUS", "推演状态筛选值无效", nil)
@@ -56,15 +56,30 @@ func (s *SimulationService) List(ctx context.Context, query dto.SimulationListQu
 	if err != nil {
 		return nil, 0, page, pageSize, mapRepositoryError(err, "推演记录")
 	}
-	return items, total, page, pageSize, nil
+	nodes, edges, err := s.currentEnabledNetwork(ctx)
+	if err != nil {
+		return nil, 0, page, pageSize, api.Internal(fmt.Errorf("load current network for freshness: %w", err))
+	}
+	views := make([]model.SimulationRunView, 0, len(items))
+	for i := range items {
+		views = append(views, *annotateRun(&items[i], nodes, edges))
+	}
+	return views, total, page, pageSize, nil
 }
 
-func (s *SimulationService) Get(ctx context.Context, id uint) (*model.SimulationRun, error) {
+func (s *SimulationService) Get(ctx context.Context, id uint) (*model.SimulationRunView, error) {
 	item, err := s.runs.Find(ctx, id)
-	return item, mapRepositoryError(err, "推演记录")
+	if err != nil {
+		return nil, mapRepositoryError(err, "推演记录")
+	}
+	nodes, edges, err := s.currentEnabledNetwork(ctx)
+	if err != nil {
+		return nil, api.Internal(fmt.Errorf("load current network for freshness: %w", err))
+	}
+	return annotateRun(item, nodes, edges), nil
 }
 
-func (s *SimulationService) Start(ctx context.Context, scenarioID uint, actor Actor) (*model.SimulationRun, error) {
+func (s *SimulationService) Start(ctx context.Context, scenarioID uint, actor Actor) (*model.SimulationRunView, error) {
 	scenario, err := s.scenarios.Find(ctx, scenarioID)
 	if err != nil {
 		return nil, mapRepositoryError(err, "风机方案")
@@ -82,26 +97,30 @@ func (s *SimulationService) Start(ctx context.Context, scenarioID uint, actor Ac
 	}
 	result := solveNetwork(*scenario, nodes, edges)
 	now := time.Now().UTC()
+	fingerprint := buildNetworkFingerprint(nodes, edges)
 	snapshotJSON := mustJSON(simulationSnapshot{Scenario: *scenario, Nodes: nodes, Edges: edges})
 	run := &model.SimulationRun{
 		ScenarioID: scenario.ID, RunStatus: string(result.Status), IterationCount: result.Iterations,
 		Residual: result.Residual, InputSnapshotJSON: snapshotJSON,
 		NodePressuresJSON: mustJSON(result.Pressures), EdgeFlowsJSON: mustJSON(result.Flows),
 		ResidualsJSON: mustJSON(result.Residuals), RiskFlagsJSON: mustJSON(result.Risks),
+		NetworkFingerprintJSON: mustFingerprintJSON(fingerprint),
 		AlgorithmVersion: algorithmVersion, StartedBy: actor.ID, StartedAt: now, FinishedAt: &now,
 	}
 	audit := actor.Audit("simulation_run.started", "simulation_run")
 	audit.Metadata = string(mustJSON(map[string]interface{}{
 		"scenario_id": scenario.ID, "result_status": result.Status,
 		"network_issues": result.NetworkIssues,
+		"network_fingerprint_version": fingerprint.Version,
 	}))
 	if err := s.runs.Create(ctx, run, audit); err != nil {
 		return nil, mapRepositoryError(err, "推演记录")
 	}
-	return run, nil
+	// 新一轮推演的指纹直接取自当前网络，必然新鲜。
+	return &model.SimulationRunView{SimulationRun: run, NetworkFresh: true}, nil
 }
 
-func (s *SimulationService) ConfirmRisks(ctx context.Context, id uint, note string, actor Actor) (*model.SimulationRun, error) {
+func (s *SimulationService) ConfirmRisks(ctx context.Context, id uint, note string, actor Actor) (*model.SimulationRunView, error) {
 	run, err := s.runs.Find(ctx, id)
 	if err != nil {
 		return nil, mapRepositoryError(err, "推演记录")
@@ -109,11 +128,19 @@ func (s *SimulationService) ConfirmRisks(ctx context.Context, id uint, note stri
 	if run.RunStatus == string(constants.SimulationStatusRunning) || run.RunStatus == string(constants.SimulationStatusQueued) {
 		return nil, api.Conflict("SIMULATION_NOT_FINISHED", "推演完成后才能确认风险证据")
 	}
+	nodes, edges, err := s.currentEnabledNetwork(ctx)
+	if err != nil {
+		return nil, api.Internal(fmt.Errorf("load current network for freshness: %w", err))
+	}
+	fresh, changes := evaluateNetworkFreshness(run.NetworkFingerprintJSON, nodes, edges)
+	if !fresh {
+		return nil, api.ConflictWithDetails("SIMULATION_NETWORK_STALE", "该轮推演所依据的网络参数已变化，证据已过期，不能确认；请使用同一方案重新发起推演", changes)
+	}
 	updated, err := s.runs.ConfirmRisks(ctx, id, actor.ID, note, actor.Audit("simulation_run.risks_confirmed", "simulation_run"))
 	if err != nil {
 		return nil, mapRepositoryError(err, "推演风险确认")
 	}
-	return updated, nil
+	return &model.SimulationRunView{SimulationRun: updated, NetworkFresh: true}, nil
 }
 
 func solveNetwork(scenario model.FanScenario, nodes []model.VentilationNode, edges []model.AirwayEdge) solverResult {

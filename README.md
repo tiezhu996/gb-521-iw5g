@@ -36,6 +36,8 @@ docker compose down -v --remove-orphans
 - 维护进风口、回风口、工作面、网络交点和有向巷道边，检测自环、孤立节点、边界缺失及不可达工作面。
 - 风机方案固定执行 `draft -> pending_review -> approved -> archived`，驳回返回 `draft` 并保留原因；版本条件更新防止并发越级。
 - 根据巷道阻力关系执行确定性迭代，保存输入快照、每轮最大残差、节点压力、边风量和历史运行，不使用随机数伪造结果。
+- 发起推演时同步保存“已启用节点 + 已启用巷道”关键参数指纹；网络参数事后变化时，历史结果与人工确认原样保留，但列表/详情会把该轮推演标记为“网络已过期”并逐对象列出变化（修改字段、新增、停用/删除）。
+- 联锁页禁止对过期证据做人工确认（后端返回 `SIMULATION_NETWORK_STALE` 409），必须保持同一方案重新发起推演；参数一致时确认流程不变。
 - 计算风速超限、反向流、工作面需风缺口和关键路径中断四类规则证据，并要求复核员或管理员人工确认。
 - JWT、RBAC、请求限流、request ID、结构化日志和不可变操作审计贯穿后端与前端权限表现。
 
@@ -127,8 +129,8 @@ npm --prefix frontend run build
 | `GET/POST` | `/api/v1/scenarios` | 方案列表与草稿创建 |
 | `POST` | `/api/v1/scenarios/:id/transition` | 提交、批准、驳回、归档 |
 | `GET/POST` | `/api/v1/simulations` | 历史查询与批准方案推演，启动独立限流 |
-| `GET` | `/api/v1/simulations/:id` | 完整结果和残差历史 |
-| `POST` | `/api/v1/simulations/:id/confirm-risks` | 人工确认风险证据 |
+| `GET` | `/api/v1/simulations/:id` | 完整结果和残差历史，附带 `network_fresh` 与 `network_changes` 新鲜度判定 |
+| `POST` | `/api/v1/simulations/:id/confirm-risks` | 人工确认风险证据；证据已过期（`SIMULATION_NETWORK_STALE`）时返回 409，必须重新发起同方案推演 |
 | `GET` | `/api/v1/audits` | 按操作者、对象、状态和时间筛选审计 |
 
 响应统一为 `{ data, request_id, meta? }` 或 `{ error: { code, message, details? }, request_id }`，时间使用 RFC 3339 UTC 字符串。
@@ -177,6 +179,7 @@ npm --prefix frontend run build
 - 后端未 healthy：执行 `docker compose logs backend`，重点检查 JWT 密钥长度、数据库密码和 PostgreSQL 健康状态。
 - 页面登录后请求 401：清除当前标签页的 `sessionStorage` 后重新登录；令牌只保存在会话存储中。
 - 方案不能推演：确认方案已由 `reviewer` 或 `admin` 迁移到 `approved`，工程师不能自行批准。
+- 风险证据确认被拒（`SIMULATION_NETWORK_STALE`）：推演后网络参数发生过变化，该轮推演已标记“网络已过期”，变更对象见列表/详情；历史结果和已有确认不会删除，但需由工程师/管理员用同一方案重新发起推演后再确认新证据。
 - 端口冲突：只能在确有冲突时同时修改 `.env` 与访问地址；项目规定端口用于批量验收时不要变更。
 
 ## License

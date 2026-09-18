@@ -62,6 +62,10 @@ func Conflict(code, message string) *AppError {
 	return &AppError{Status: http.StatusConflict, Code: code, Message: message}
 }
 
+func ConflictWithDetails(code, message string, details interface{}) *AppError {
+	return &AppError{Status: http.StatusConflict, Code: code, Message: message, Details: details}
+}
+
 func Unprocessable(code, message string, details interface{}) *AppError {
 	return &AppError{Status: http.StatusUnprocessableEntity, Code: code, Message: message, Details: details}
 }

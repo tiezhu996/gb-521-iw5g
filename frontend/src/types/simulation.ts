@@ -14,6 +14,18 @@ export interface RiskEvidence {
   description: string;
 }
 
+export type NetworkChangeType = 'modified' | 'added' | 'removed';
+
+export interface NetworkChange {
+  entity_type: 'ventilation_node' | 'airway_edge' | string;
+  entity_id: number;
+  code: string;
+  change_type: NetworkChangeType;
+  fields?: string[];
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+}
+
 export interface SimulationRun {
   id: number;
   scenario_id: number;
@@ -25,6 +37,7 @@ export interface SimulationRun {
   edge_flows_json: Record<string, number>;
   residuals_json: number[];
   risk_flags_json: RiskEvidence[];
+  network_fingerprint_json?: unknown;
   algorithm_version: string;
   started_by: number;
   started_at: string;
@@ -33,4 +46,6 @@ export interface SimulationRun {
   risk_confirmed_at?: string;
   confirmation_note: string;
   scenario?: FanScenario;
+  network_fresh: boolean;
+  network_changes: NetworkChange[];
 }
